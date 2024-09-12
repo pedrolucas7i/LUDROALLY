@@ -1,0 +1,12 @@
+1   -    SUPER       -   AG - GPIO: 20|16
+2   -    LEFT        -   AF - GPIO: 20|21
+3   -    UP          -   BG - GPIO:  5|16
+4   -    DOWN        -   AE - GPIO: 20|26
+5   -    RIGHT       -   BF - GPIO:  5|21
+6   -    VOL_DOWN    -   BE - GPIO:  5|26
+7   -    VOL_UP      -   CE - GPIO:  6|26
+8   -    RIGHT_CLICK -   CF - GPIO:  6|21
+9   -    LEFT_CLICK  -   DE - GPIO: 19|26
+10  -    COPY        -   CG - GPIO:  6|16
+11  -    PASTE       -   DF - GPIO: 19|21
+12  -    TAB         -   DG - GPIO: 19|16
