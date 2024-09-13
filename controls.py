@@ -1,6 +1,10 @@
-import RPi.GPIO as GPIO
+import gpiozero
 import subprocess
 import time
+import os
+
+env = os.environ.copy()
+env['PULSE_SERVER'] = 'unix:/run/user/1000/pulse/native'.format(uid=os.getuid())
 
 # Definition of GPIO pins for rows and columns of the button matrix (4x3)
 ROW_PINS = [20, 5, 6, 19]   # Columns (physical), now are rows (logical)
@@ -22,15 +26,9 @@ BUTTON_FUNCTIONS = {
     (3, 2): 'TAB'
 }
 
-# Set the mode of pin numbering
-GPIO.setmode(GPIO.BCM)
-
-# Configure rows as output and columns as input with pull-down resistors
-for row in ROW_PINS:
-    GPIO.setup(row, GPIO.OUT, initial=GPIO.LOW)
-
-for col in COL_PINS:
-    GPIO.setup(col, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+# Initialize row pins as output and column pins as input
+row_outputs = [gpiozero.OutputDevice(pin, active_high=True, initial_value=False) for pin in ROW_PINS]
+col_inputs = [gpiozero.Button(pin, pull_up=False) for pin in COL_PINS]
 
 # Function to move the mouse cursor
 def move_mouse(x, y):
@@ -53,43 +51,53 @@ def press_key(key):
     except subprocess.CalledProcessError as e:
         print(f"Error pressing key {key}: {e}")
 
+def run(command):
+    try:
+        subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(f"Error runnning command {command}: {e}")
+
+def vol_up():
+    try:
+        subprocess.run(['amixer', '-D', 'pulse', 'sset', 'Master', '5%+'], env=env)
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+
+def vol_down():
+    try:
+        subprocess.run(['amixer', '-D', 'pulse', 'sset', 'Master', '5%-'], env=env)
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+
 # Function to scan the matrix and identify which button was pressed
 def scan_matrix():
-    for row_index, row_pin in enumerate(ROW_PINS):
-        GPIO.output(row_pin, GPIO.HIGH)  # Activate the current row
+    for row_index, row in enumerate(row_outputs):
+        row.on()  # Activate the current row
 
-        # Check the state of each column
-        if GPIO.input(COL_PINS[0]) == 1:  # Column 0 pressed
-            GPIO.output(row_pin, GPIO.LOW)      # Deactivate the row before returning
-            return (row_index, 0)  # Return the row and column of the pressed button
+        for col_index, col in enumerate(col_inputs):
+            if col.is_pressed:  # Column pressed
+                row.off()  # Deactivate the row before returning
+                return (row_index, col_index)
 
-        if GPIO.input(COL_PINS[1]) == 1:  # Column 1 pressed
-            GPIO.output(row_pin, GPIO.LOW)      # Deactivate the row before returning
-            return (row_index, 1)  # Return the row and column of the pressed button
-
-        if GPIO.input(COL_PINS[2]) == 1:  # Column 2 pressed
-            GPIO.output(row_pin, GPIO.LOW)      # Deactivate the row before returning
-            return (row_index, 2)  # Return the row and column of the pressed button
-
-        GPIO.output(row_pin, GPIO.LOW)  # Deactivate the row after checking
+        row.off()  # Deactivate the row after checking
 
     return None  # No button was pressed
 
 # Movement and speed settings
-acceleration = 5
-max_speed = 20
+acceleration = 7
+max_speed = 40
 x_speed = 0
 y_speed = 0
 
 try:
     while True:
         pressed_button = scan_matrix()
-        
+
         if pressed_button:
             #print(f"Button pressed: {pressed_button}")  # Debug: Print the coordinate of the button
             action = BUTTON_FUNCTIONS.get(pressed_button)
             #print(f"Action executed: {action}")  # Debug: Print the associated action
-            
+
             if action == 'LEFT':
                 x_speed = -acceleration
             elif action == 'RIGHT':
@@ -105,9 +113,9 @@ try:
             elif action == 'SUPER':
                 press_key('Super_L')
             elif action == 'VOL_UP':
-                press_key('XF86AudioRaiseVolume')
+                vol_up()
             elif action == 'VOL_DOWN':
-                press_key('XF86AudioLowerVolume')
+                vol_down()
             elif action == 'COPY':
                 press_key('ctrl+shift+c')
             elif action == 'PASTE':
@@ -118,14 +126,15 @@ try:
         else:
             x_speed = 0
             y_speed = 0
-        
+
         x_speed = max(min(x_speed, max_speed), -max_speed)
         y_speed = max(min(y_speed, max_speed), -max_speed)
-        
+
         if x_speed != 0 or y_speed != 0:
             move_mouse(x_speed, y_speed)
 
-        time.sleep(0.05)
+        time.sleep(0.1)
 
 except KeyboardInterrupt:
-    GPIO.cleanup()
+    for row in row_outputs:
+        row.off()  # Ensure all rows are off
